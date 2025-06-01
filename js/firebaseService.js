@@ -1,11 +1,12 @@
+// js/firebaseService.js
+
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-import { getAuth, signInAnonymously, onAuthStateChanged, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js"; // Removido signInWithCustomToken
-import { getFirestore, doc, addDoc, deleteDoc, onSnapshot, collection, query, serverTimestamp, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+import { getAuth, signInAnonymously, onAuthStateChanged, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+import { getFirestore, doc, addDoc, deleteDoc, onSnapshot, collection, query, serverTimestamp, updateDoc, orderBy, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
 import { showLoading, showMessage, renderTask, updateUserInfoText, clearTaskList, displayNoTasksMessage, removeNoTasksMessage, getTaskListElement } from './ui.js';
 import { pauseLocalTimer, removeTaskTimer, getTaskTimerState, initializeTaskTimer } from './timer.js';
 
-// Configuração do Firebase e appId customizado
 const firebaseConfig = {
     apiKey: "AIzaSyCfnPkROxNQP9p7wCrHO4ElcoNfPJNQFTA",
     authDomain: "task-timer-ai.firebaseapp.com",
@@ -14,9 +15,8 @@ const firebaseConfig = {
     messagingSenderId: "627092623866",
     appId: "1:627092623866:web:461b9338a59e2281cd5443"
 };
-const customAppId = 'task-timer-ai'; // appId customizado
+const customAppId = 'task-timer-ai';
 
-// Variáveis de módulo para instâncias e estado do Firebase
 let app;
 let auth;
 let db;
@@ -24,14 +24,13 @@ let userId;
 let tasksCollectionRef;
 let tasksUnsubscribe = null;
 
-export async function initFirebase() {
+export async function initFirebase(onUserAuthenticatedCallback) {
     if (!firebaseConfig) {
         console.error("Configuração do Firebase não encontrada!");
         showMessage("Erro de configuração. App não pode iniciar.", "error");
-        updateUserInfoText("Erro de configuração do Firebase.");
+        if (typeof updateUserInfoText === 'function') updateUserInfoText("Erro de configuração do Firebase.");
         return;
     }
-
     try {
         app = initializeApp(firebaseConfig);
         auth = getAuth(app);
@@ -39,94 +38,136 @@ export async function initFirebase() {
         await setPersistence(auth, browserLocalPersistence);
 
         onAuthStateChanged(auth, async (user) => {
-            showLoading(true, "Autenticando...");
+            if (typeof showLoading === 'function') showLoading(true, "Autenticando...");
+            console.log("onAuthStateChanged: Status do usuário:", user ? `Logado (${user.uid})` : "Deslogado");
+
             if (user) {
                 userId = user.uid;
-                updateUserInfoText(`Logado como: ${userId.substring(0, 10)}...`);
-                tasksCollectionRef = collection(db, `artifacts/${customAppId}/users/${userId}/tasks`);
-                loadTasks();
+                if (typeof updateUserInfoText === 'function') updateUserInfoText(`Logado como: ${userId.substring(0, 10)}...`);
+                
+                console.log("firebaseService.js - customAppId:", customAppId);
+                console.log("firebaseService.js - userId:", userId);
+                const pathString = `artifacts/${customAppId}/users/${userId}/tasks`;
+                console.log("firebaseService.js - Caminho da coleção construído:", pathString);
+                console.log("firebaseService.js - Número de segmentos (contando barras):", (pathString.match(/\//g) || []).length + 1);
+
+                tasksCollectionRef = collection(db, pathString);
+                
+                console.log("onAuthStateChanged: Antes de chamar onUserAuthenticatedCallback");
+                if (onUserAuthenticatedCallback) {
+                    onUserAuthenticatedCallback(); 
+                }
+                console.log("onAuthStateChanged: Depois de chamar onUserAuthenticatedCallback");
             } else {
                 try {
                     await signInAnonymously(auth);
+                    console.log("onAuthStateChanged: signInAnonymously chamado, aguardando novo estado de auth...");
                 } catch (error) {
                     console.error("Erro no login anônimo:", error);
-                    showMessage("Falha na autenticação. Verifique o console.", "error");
-                    updateUserInfoText("Falha na autenticação.");
-                    showLoading(false);
+                    if (typeof showMessage === 'function') showMessage("Falha na autenticação. Verifique o console.", "error");
+                    if (typeof updateUserInfoText === 'function') updateUserInfoText("Falha na autenticação.");
+                    if (typeof showLoading === 'function') showLoading(false);
                 }
             }
         });
-
     } catch (error) {
         console.error("Erro ao inicializar Firebase:", error);
-        showMessage("Erro crítico ao iniciar o app.", "error");
-        updateUserInfoText("Falha ao conectar com Firebase.");
-        showLoading(false);
+        if (typeof showMessage === 'function') showMessage("Erro crítico ao iniciar o app.", "error");
+        if (typeof updateUserInfoText === 'function') updateUserInfoText("Falha ao conectar com Firebase.");
+        if (typeof showLoading === 'function') showLoading(false);
     }
 }
 
-export async function createTaskInFirestore(description) {
+export async function createTaskInFirestore(description, priority, dueDate) {
     if (!userId || !tasksCollectionRef) {
-        showMessage("Usuário não autenticado ou coleção não definida.", "error");
+        if (typeof showMessage === 'function') showMessage("Usuário não autenticado ou coleção não definida.", "error");
         return false;
     }
-    showLoading(true, "Adicionando tarefa...");
+    if (typeof showLoading === 'function') showLoading(true, "Adicionando tarefa...");
     try {
+        let priorityOrder = 2; // Média por padrão
+        if (priority === 'alta') priorityOrder = 1;
+        else if (priority === 'baixa') priorityOrder = 3;
+
         const newTask = {
             description: description,
+            longDescription: "", // NOVO CAMPO: Inicializa descrição longa como vazia
             isCompleted: false,
             timeSpent: 0,
             isRunning: false,
             createdAt: serverTimestamp(),
-            userId: userId 
+            userId: userId,
+            priority: priority || 'media',
+            priorityOrder: priorityOrder,
+            dueDate: dueDate || null
         };
         await addDoc(tasksCollectionRef, newTask);
-        showMessage(`Tarefa "${description.substring(0,20).trimEnd()}..." adicionada!`, "success");
+        if (typeof showMessage === 'function') showMessage(`Tarefa "${description.substring(0,20).trimEnd()}..." adicionada!`, "success");
         return true;
     } catch (error) {
         console.error("Erro ao adicionar tarefa:", error);
-        showMessage("Erro ao adicionar tarefa.", "error");
+        if (typeof showMessage === 'function') showMessage("Erro ao adicionar tarefa.", "error");
         return false;
     } finally {
-        showLoading(false);
+        if (typeof showLoading === 'function') showLoading(false);
+    }
+}
+
+export async function updateTask(taskId, dataToUpdate) {
+    if (!userId || !tasksCollectionRef) {
+        if (typeof showMessage === 'function') showMessage("Usuário não autenticado ou coleção não definida.", "error");
+        return false;
+    }
+    const taskDocRef = doc(tasksCollectionRef, taskId);
+    if (typeof showLoading === 'function') showLoading(true, "Atualizando tarefa...");
+    try {
+        await updateDoc(taskDocRef, dataToUpdate);
+        // showMessage("Tarefa atualizada!", "success"); // O onSnapshot cuida da atualização visual
+        return true;
+    } catch (error) {
+        console.error("Erro ao atualizar tarefa:", error);
+        if (typeof showMessage === 'function') showMessage("Erro ao atualizar tarefa.", "error");
+        return false;
+    } finally {
+        if (typeof showLoading === 'function') showLoading(false);
     }
 }
 
 export async function toggleCompleteTask(taskId, isCompleted) {
     if (!userId || !tasksCollectionRef) return;
     const taskDocRef = doc(tasksCollectionRef, taskId);
-    showLoading(true, "Atualizando tarefa...");
+    if (typeof showLoading === 'function') showLoading(true, "Atualizando tarefa...");
     try {
         await updateDoc(taskDocRef, { isCompleted: isCompleted });
         if (isCompleted) {
-            const timerState = getTaskTimerState(taskId);
+            const timerState = getTaskTimerState(taskId); // Vem de timer.js
             if (timerState && timerState.isRunning) {
-                pauseLocalTimer(taskId); // Pausa o timer local
-                await updateTimerStateInFirestore(taskId, timerState.timeSpent, false); // Atualiza no Firestore
+                pauseLocalTimer(taskId); // Vem de timer.js
+                await updateTimerStateInFirestore(taskId, timerState.timeSpent, false);
             }
         }
-        showMessage(isCompleted ? "Tarefa concluída!" : "Tarefa reaberta!", "success");
+        if (typeof showMessage === 'function') showMessage(isCompleted ? "Tarefa concluída!" : "Tarefa reaberta!", "success");
     } catch (error) {
         console.error("Erro ao atualizar tarefa:", error);
-        showMessage("Erro ao atualizar tarefa.", "error");
+        if (typeof showMessage === 'function') showMessage("Erro ao atualizar tarefa.", "error");
     } finally {
-        showLoading(false);
+        if (typeof showLoading === 'function') showLoading(false);
     }
 }
 
 export async function deleteTask(taskId) {
     if (!userId || !tasksCollectionRef) return;
-    showLoading(true, "Excluindo tarefa...");
+    if (typeof showLoading === 'function') showLoading(true, "Excluindo tarefa...");
     try {
         const taskDocRef = doc(tasksCollectionRef, taskId);
         await deleteDoc(taskDocRef);
-        removeTaskTimer(taskId); // Remove o timer local associado
-        showMessage("Tarefa excluída com sucesso!", "success");
+        removeTaskTimer(taskId); // Vem de timer.js
+        if (typeof showMessage === 'function') showMessage("Tarefa excluída com sucesso!", "success");
     } catch (error) {
         console.error("Erro ao deletar tarefa:", error);
-        showMessage("Erro ao deletar tarefa.", "error");
+        if (typeof showMessage === 'function') showMessage("Erro ao deletar tarefa.", "error");
     } finally {
-        showLoading(false);
+        if (typeof showLoading === 'function') showLoading(false);
     }
 }
 
@@ -140,46 +181,52 @@ export async function updateTimerStateInFirestore(taskId, timeSpent, isRunning) 
     }
 }
 
-function loadTasks() {
-    if (!userId || !tasksCollectionRef) return;
-    showLoading(true, "Carregando tarefas...");
+export function loadTasksWithOptions(filters, sort) {
+    console.log("firebaseService.js: loadTasksWithOptions iniciada com:", filters, sort);
+    if (!userId || !tasksCollectionRef) {
+        console.error("loadTasksWithOptions: userId ou tasksCollectionRef não definido. Saindo.");
+        if (typeof showLoading === 'function') showLoading(false);
+        return;
+    }
+    if (typeof showLoading === 'function') showLoading(true, "Carregando tarefas...");
+    if (tasksUnsubscribe) tasksUnsubscribe();
 
-    if (tasksUnsubscribe) tasksUnsubscribe(); // Cancela listener anterior, se houver
+    let q = query(tasksCollectionRef); 
 
-    const q = query(tasksCollectionRef); 
+    if (filters.status === 'pendentes') { q = query(q, where("isCompleted", "==", false)); }
+    else if (filters.status === 'concluidas') { q = query(q, where("isCompleted", "==", true)); }
+    if (filters.priority !== 'todas') { q = query(q, where("priority", "==", filters.priority)); }
     
+    if (sort.field === 'priorityOrder') { q = query(q, orderBy("priorityOrder", sort.direction)); }
+    else if (sort.field === 'dueDate') { q = query(q, orderBy("dueDate", sort.direction)); }
+    else if (sort.field === 'createdAt') { q = query(q, orderBy("createdAt", sort.direction)); }
+    else if (sort.field === 'description') { q = query(q, orderBy("description", sort.direction));}
+    // Adicionar um orderBy padrão se nenhum for especificado ou como secundário
+    // Ex: Se não for createdAt, adiciona orderBy("createdAt", "desc") como secundário.
+    // Por ora, a última ordenação aplicada prevalece.
+
     tasksUnsubscribe = onSnapshot(q, (querySnapshot) => {
-        const currentTasksOnPage = new Set();
-        
-        
+        console.log("firebaseService.js: onSnapshot recebeu dados (ou query vazia)");
+        const taskListElement = getTaskListElement(); // Vem de ui.js
+        if (taskListElement && typeof clearTaskList === 'function') clearTaskList(); 
+
         querySnapshot.forEach((docSnapshot) => {
             const task = { id: docSnapshot.id, ...docSnapshot.data() };
-            // Garante que timers sejam inicializados ou atualizados com dados do Firestore
-            initializeTaskTimer(task.id, task.timeSpent || 0, task.isRunning || false);
-            renderTask(task); // ui.js fará o render ou update
-            currentTasksOnPage.add(task.id);
+            initializeTaskTimer(task.id, task.timeSpent || 0, task.isRunning || false); // Vem de timer.js
+            if (typeof renderTask === 'function') renderTask(task); // Vem de ui.js
         });
 
-        const taskListElement = getTaskListElement();
         if (taskListElement) {
-            Array.from(taskListElement.children).forEach(child => {
-                const childId = child.dataset.id;
-                if (childId && !currentTasksOnPage.has(childId) && child.classList.contains('task-card') ) { // Verifica se é um task-card
-                    child.remove();
-                    removeTaskTimer(childId); // Limpa timer local
-                }
-            });
-
-            if (querySnapshot.empty && taskListElement.children.length === 0) { // Verifica se realmente está vazio
-                displayNoTasksMessage();
+            if (querySnapshot.empty && taskListElement.children.length === 0) {
+                if (typeof displayNoTasksMessage === 'function') displayNoTasksMessage();
             } else if (!querySnapshot.empty) {
-                removeNoTasksMessage();
+                if (typeof removeNoTasksMessage === 'function') removeNoTasksMessage();
             }
         }
-        showLoading(false);
+        if (typeof showLoading === 'function') showLoading(false);
     }, (error) => {
-        console.error("Erro ao carregar tarefas:", error);
-        showMessage("Erro ao carregar tarefas.", "error");
-        showLoading(false);
+        console.error("firebaseService.js: Erro no onSnapshot:", error);
+        if (typeof showMessage === 'function') showMessage("Erro ao carregar tarefas.", "error");
+        if (typeof showLoading === 'function') showLoading(false);
     });
 }
