@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gerenciador de Tarefas Diárias com IA</title>
+    <link rel="icon" href="/icons/favicon_task_timer.png" type="image/png">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="style.css"> 
+</head>
+<body class="bg-gradient-to-br from-slate-900 to-slate-700 text-slate-50 min-h-screen flex flex-col items-center pt-8 px-4">
+
+    <div id="loadingIndicator">
+        <i class="fas fa-spinner fa-spin"></i>
+        <span>Aguarde...</span>
+    </div>
+
+    <div class="w-full max-w-3xl mx-auto bg-slate-800 p-6 sm:p-8 rounded-xl shadow-2xl">
+        <header class="mb-8 text-center">
+            <h1 class="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-sky-400 to-blue-500">
+                <i class="fas fa-tasks mr-2"></i>Gerenciador de Tarefas com IA
+            </h1>
+            <p class="text-slate-400 mt-2">Organize seu dia, controle seu tempo e quebre grandes tarefas com IA.</p>
+            <div id="userInfo" class="mt-4 text-xs text-slate-500">
+                Carregando ID do usuário...
+            </div>
+        </header>
+
+        <form id="taskForm" class="mb-8">
+            <div class="flex flex-col sm:flex-row gap-4">
+                <input type="text" id="taskInput" placeholder="Adicionar nova tarefa..." class="flex-grow p-3 border border-slate-600 rounded-lg bg-slate-700 text-slate-50 focus:ring-2 focus:ring-sky-500 focus:border-sky-500 outline-none" required>
+                <button type="submit" class="btn btn-primary text-white font-semibold py-3 px-6 rounded-lg shadow-md hover:shadow-lg">
+                    <i class="fas fa-plus mr-2"></i>Adicionar Tarefa
+                </button>
+            </div>
+        </form>
+
+        <div id="taskList" class="space-y-4 max-h-[55vh] overflow-y-auto pr-2">
+            
+        </div>
+    </div>
+
+    <div id="subtaskModal" class="fixed inset-0 bg-slate-900 bg-opacity-80 flex items-center justify-center p-4 z-[1040] hidden">
+        <div class="bg-slate-800 p-6 rounded-lg shadow-xl w-full max-w-lg border border-slate-700">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-xl font-semibold text-sky-400">✨ Subtarefas Sugeridas</h3>
+                <button id="closeSubtaskModal" class="text-slate-400 hover:text-slate-200">
+                    <i class="fas fa-times fa-lg"></i>
+                </button>
+            </div>
+            <p class="text-sm text-slate-300 mb-1">Para a tarefa: "<span id="originalTaskName" class="font-semibold"></span>"</p>
+            <p class="text-xs text-slate-500 mb-4">Clique em "Adicionar" para incluir uma sugestão como nova tarefa.</p>
+            <div id="suggestedSubtasksList" class="space-y-3 mb-6 max-h-60 overflow-y-auto pr-2">
+                {/* Subtarefas sugeridas serão renderizadas aqui */}
+            </div>
+            <div id="subtaskLoadingIndicator" class="text-center py-4 hidden">
+                <i class="fas fa-brain fa-spin mr-2 text-sky-400"></i> Gerando sugestões...
+            </div>
+            <div id="subtaskErrorState" class="text-center py-4 hidden">
+                <i class="fas fa-exclamation-triangle mr-2 text-red-400"></i> <span id="subtaskErrorMessage"></span>
+            </div>
+        </div>
+    </div>
+
+    <div id="messageBox"></div>
+
+    <template id="taskItemTemplate">
+        <div class="task-card bg-slate-700 p-4 rounded-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div class="flex-grow">
+                <p class="task-description text-lg font-medium text-slate-100"></p>
+                <p class="task-created-at text-xs text-slate-400"></p>
+            </div>
+            <div class="flex flex-col items-start sm:items-end gap-2 w-full sm:w-auto">
+                <div class="timer-display text-sky-400">00:00:00</div>
+                <div class="flex flex-wrap gap-2 mt-2">
+                    <button class="task-timer-toggle btn text-white py-2 px-3 rounded-md text-sm">
+                        <i class="fas fa-play mr-1"></i> Iniciar
+                    </button>
+                    <button class="task-timer-reset btn btn-warning text-white py-2 px-3 rounded-md text-sm">
+                        <i class="fas fa-undo mr-1"></i> Resetar
+                    </button>
+                    <button class="task-breakdown btn btn-purple text-white py-2 px-3 rounded-md text-sm">
+                        <i class="fas fa-sitemap mr-1"></i> ✨ Quebrar Tarefa
+                    </button>
+                    <button class="task-complete btn btn-success text-white py-2 px-3 rounded-md text-sm">
+                        <i class="fas fa-check mr-1"></i> Concluir
+                    </button>
+                    <button class="task-delete btn btn-danger text-white py-2 px-3 rounded-md text-sm">
+                        <i class="fas fa-trash mr-1"></i> Excluir
+                    </button>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <script type="module" src="js/main.js"></script>
+</body>
+</html>

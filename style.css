@@ -1,0 +1,123 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+body {
+    font-family: 'Inter', sans-serif;
+}
+.task-card {
+    transition: all 0.3s ease-in-out;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+.task-card:hover {
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+}
+.task-completed {
+    opacity: 0.6;
+}
+.task-completed .task-description {
+    text-decoration: line-through;
+    color: #9ca3af;
+}
+.timer-display {
+    font-size: 1.5em;
+    font-weight: 600;
+}
+.btn {
+    transition: all 0.2s ease-in-out;
+}
+.btn:hover {
+    transform: translateY(-1px);
+}
+.btn-primary {
+    background-color: #4299e1;
+}
+.btn-primary:hover {
+    background-color: #3182ce;
+}
+.btn-secondary {
+    background-color: #4a5568;
+}
+.btn-secondary:hover {
+    background-color: #2d3748;
+}
+.btn-danger {
+    background-color: #e53e3e;
+}
+.btn-danger:hover {
+    background-color: #c53030;
+}
+.btn-success {
+    background-color: #38a169;
+}
+.btn-success:hover {
+    background-color: #2f855a;
+}
+.btn-warning {
+    background-color: #dd6b20;
+}
+.btn-warning:hover {
+    background-color: #c05621;
+}
+.btn-purple {
+    background-color: #8B5CF6;
+}
+.btn-purple:hover {
+    background-color: #7C3AED;
+}
+#taskList::-webkit-scrollbar, #suggestedSubtasksList::-webkit-scrollbar {
+    width: 8px;
+}
+#taskList::-webkit-scrollbar-track, #suggestedSubtasksList::-webkit-scrollbar-track {
+    background: #374151;
+    border-radius: 10px;
+}
+#taskList::-webkit-scrollbar-thumb, #suggestedSubtasksList::-webkit-scrollbar-thumb {
+    background: #6b7280;
+    border-radius: 10px;
+}
+#taskList::-webkit-scrollbar-thumb:hover, #suggestedSubtasksList::-webkit-scrollbar-thumb:hover {
+    background: #4b5563;
+}
+#messageBox {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    padding: 12px 20px;
+    border-radius: 8px;
+    color: white;
+    font-weight: 500;
+    z-index: 1050;
+    opacity: 0;
+    transition: opacity 0.5s ease-in-out;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+#messageBox.show {
+    opacity: 1;
+}
+#messageBox.success {
+    background-color: #38a169;
+}
+#messageBox.error {
+    background-color: #e53e3e;
+}
+#loadingIndicator {
+    display: none;
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    padding: 25px;
+    background-color: rgba(30, 41, 59, 0.95);
+    border-radius: 10px;
+    box-shadow: 0 0 20px rgba(0,0,0,0.3);
+    z-index: 2000;
+    font-size: 1.25em;
+    color: #e5e7eb;
+    text-align: center;
+}
+#loadingIndicator i {
+    font-size: 1.5em;
+    margin-bottom: 0.5rem;
+    display: block;
+}
+#subtaskModal.hidden {
+    display: none;
+}
