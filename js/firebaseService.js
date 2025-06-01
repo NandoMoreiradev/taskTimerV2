@@ -2,21 +2,23 @@
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import { getAuth, signInAnonymously, onAuthStateChanged, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-import { getFirestore, doc, addDoc, deleteDoc, onSnapshot, collection, query, serverTimestamp, updateDoc, orderBy, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+import { getFirestore, doc, addDoc, deleteDoc, onSnapshot, collection, query, serverTimestamp, updateDoc, orderBy, where, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js"; // Adicionado getDocs
 
 import { showLoading, showMessage, renderTask, updateUserInfoText, clearTaskList, displayNoTasksMessage, removeNoTasksMessage, getTaskListElement } from './ui.js';
 import { pauseLocalTimer, removeTaskTimer, getTaskTimerState, initializeTaskTimer } from './timer.js';
 
+// Configuração do Firebase e appId customizado
 const firebaseConfig = {
-    apiKey: "AIzaSyCfnPkROxNQP9p7wCrHO4ElcoNfPJNQFTA",
+    apiKey: "AIzaSyCfnPkROxNQP9p7wCrHO4ElcoNfPJNQFTA", // Substitua pela sua chave de API real, se aplicável
     authDomain: "task-timer-ai.firebaseapp.com",
     projectId: "task-timer-ai",
     storageBucket: "task-timer-ai.firebasestorage.app",
     messagingSenderId: "627092623866",
     appId: "1:627092623866:web:461b9338a59e2281cd5443"
 };
-const customAppId = 'task-timer-ai';
+const customAppId = 'task-timer-ai'; // Seu appId customizado para estrutura de dados
 
+// Variáveis de módulo para instâncias e estado do Firebase
 let app;
 let auth;
 let db;
@@ -25,9 +27,9 @@ let tasksCollectionRef;
 let tasksUnsubscribe = null;
 
 export async function initFirebase(onUserAuthenticatedCallback) {
-    if (!firebaseConfig) {
-        console.error("Configuração do Firebase não encontrada!");
-        showMessage("Erro de configuração. App não pode iniciar.", "error");
+    if (!firebaseConfig || !firebaseConfig.apiKey) { // Verificação básica da config
+        console.error("Configuração do Firebase incompleta ou não encontrada!");
+        if (typeof showMessage === 'function') showMessage("Erro de configuração interna. App não pode iniciar.", "error");
         if (typeof updateUserInfoText === 'function') updateUserInfoText("Erro de configuração do Firebase.");
         return;
     }
@@ -45,12 +47,7 @@ export async function initFirebase(onUserAuthenticatedCallback) {
                 userId = user.uid;
                 if (typeof updateUserInfoText === 'function') updateUserInfoText(`Logado como: ${userId.substring(0, 10)}...`);
                 
-                console.log("firebaseService.js - customAppId:", customAppId);
-                console.log("firebaseService.js - userId:", userId);
                 const pathString = `artifacts/${customAppId}/users/${userId}/tasks`;
-                console.log("firebaseService.js - Caminho da coleção construído:", pathString);
-                console.log("firebaseService.js - Número de segmentos (contando barras):", (pathString.match(/\//g) || []).length + 1);
-
                 tasksCollectionRef = collection(db, pathString);
                 
                 console.log("onAuthStateChanged: Antes de chamar onUserAuthenticatedCallback");
@@ -91,11 +88,12 @@ export async function createTaskInFirestore(description, priority, dueDate) {
 
         const newTask = {
             description: description,
-            longDescription: "", // NOVO CAMPO: Inicializa descrição longa como vazia
+            longDescription: "", 
             isCompleted: false,
             timeSpent: 0,
             isRunning: false,
             createdAt: serverTimestamp(),
+            completedAt: null, // NOVO CAMPO INICIALIZADO
             userId: userId,
             priority: priority || 'media',
             priorityOrder: priorityOrder,
@@ -122,7 +120,6 @@ export async function updateTask(taskId, dataToUpdate) {
     if (typeof showLoading === 'function') showLoading(true, "Atualizando tarefa...");
     try {
         await updateDoc(taskDocRef, dataToUpdate);
-        // showMessage("Tarefa atualizada!", "success"); // O onSnapshot cuida da atualização visual
         return true;
     } catch (error) {
         console.error("Erro ao atualizar tarefa:", error);
@@ -138,11 +135,16 @@ export async function toggleCompleteTask(taskId, isCompleted) {
     const taskDocRef = doc(tasksCollectionRef, taskId);
     if (typeof showLoading === 'function') showLoading(true, "Atualizando tarefa...");
     try {
-        await updateDoc(taskDocRef, { isCompleted: isCompleted });
+        const updateData = { 
+            isCompleted: isCompleted,
+            completedAt: isCompleted ? serverTimestamp() : null // ATUALIZA completedAt
+        };
+        await updateDoc(taskDocRef, updateData);
+        
         if (isCompleted) {
-            const timerState = getTaskTimerState(taskId); // Vem de timer.js
+            const timerState = getTaskTimerState(taskId);
             if (timerState && timerState.isRunning) {
-                pauseLocalTimer(taskId); // Vem de timer.js
+                pauseLocalTimer(taskId);
                 await updateTimerStateInFirestore(taskId, timerState.timeSpent, false);
             }
         }
@@ -161,7 +163,7 @@ export async function deleteTask(taskId) {
     try {
         const taskDocRef = doc(tasksCollectionRef, taskId);
         await deleteDoc(taskDocRef);
-        removeTaskTimer(taskId); // Vem de timer.js
+        removeTaskTimer(taskId);
         if (typeof showMessage === 'function') showMessage("Tarefa excluída com sucesso!", "success");
     } catch (error) {
         console.error("Erro ao deletar tarefa:", error);
@@ -191,29 +193,39 @@ export function loadTasksWithOptions(filters, sort) {
     if (typeof showLoading === 'function') showLoading(true, "Carregando tarefas...");
     if (tasksUnsubscribe) tasksUnsubscribe();
 
-    let q = query(tasksCollectionRef); 
+    let queryConstraints = [];
 
-    if (filters.status === 'pendentes') { q = query(q, where("isCompleted", "==", false)); }
-    else if (filters.status === 'concluidas') { q = query(q, where("isCompleted", "==", true)); }
-    if (filters.priority !== 'todas') { q = query(q, where("priority", "==", filters.priority)); }
+    // Aplicar filtros
+    if (filters.status === 'pendentes') {
+        queryConstraints.push(where("isCompleted", "==", false));
+    } else if (filters.status === 'concluidas') {
+        queryConstraints.push(where("isCompleted", "==", true));
+    }
+
+    if (filters.priority !== 'todas') {
+        queryConstraints.push(where("priority", "==", filters.priority));
+    }
+
+    // Aplicar ordenação
+    if (sort.field === 'priorityOrder') { queryConstraints.push(orderBy("priorityOrder", sort.direction)); }
+    else if (sort.field === 'dueDate') { queryConstraints.push(orderBy("dueDate", sort.direction)); }
+    else if (sort.field === 'createdAt') { queryConstraints.push(orderBy("createdAt", sort.direction)); }
+    else if (sort.field === 'description') { queryConstraints.push(orderBy("description", sort.direction));}
+    else { // Ordenação padrão se nenhuma específica ou inválida
+        queryConstraints.push(orderBy("createdAt", "desc"));
+    }
     
-    if (sort.field === 'priorityOrder') { q = query(q, orderBy("priorityOrder", sort.direction)); }
-    else if (sort.field === 'dueDate') { q = query(q, orderBy("dueDate", sort.direction)); }
-    else if (sort.field === 'createdAt') { q = query(q, orderBy("createdAt", sort.direction)); }
-    else if (sort.field === 'description') { q = query(q, orderBy("description", sort.direction));}
-    // Adicionar um orderBy padrão se nenhum for especificado ou como secundário
-    // Ex: Se não for createdAt, adiciona orderBy("createdAt", "desc") como secundário.
-    // Por ora, a última ordenação aplicada prevalece.
+    const q = query(tasksCollectionRef, ...queryConstraints);
 
     tasksUnsubscribe = onSnapshot(q, (querySnapshot) => {
         console.log("firebaseService.js: onSnapshot recebeu dados (ou query vazia)");
-        const taskListElement = getTaskListElement(); // Vem de ui.js
+        const taskListElement = getTaskListElement();
         if (taskListElement && typeof clearTaskList === 'function') clearTaskList(); 
 
         querySnapshot.forEach((docSnapshot) => {
             const task = { id: docSnapshot.id, ...docSnapshot.data() };
-            initializeTaskTimer(task.id, task.timeSpent || 0, task.isRunning || false); // Vem de timer.js
-            if (typeof renderTask === 'function') renderTask(task); // Vem de ui.js
+            initializeTaskTimer(task.id, task.timeSpent || 0, task.isRunning || false);
+            if (typeof renderTask === 'function') renderTask(task);
         });
 
         if (taskListElement) {
@@ -226,7 +238,27 @@ export function loadTasksWithOptions(filters, sort) {
         if (typeof showLoading === 'function') showLoading(false);
     }, (error) => {
         console.error("firebaseService.js: Erro no onSnapshot:", error);
-        if (typeof showMessage === 'function') showMessage("Erro ao carregar tarefas.", "error");
+        if (typeof showMessage === 'function') showMessage("Erro ao carregar tarefas. Verifique o console para detalhes sobre índices.", "error");
         if (typeof showLoading === 'function') showLoading(false);
     });
+}
+
+// Nova função para buscar todas as tarefas para relatórios
+export async function fetchAllUserTasks() {
+    if (!userId || !tasksCollectionRef) {
+        console.error("fetchAllUserTasks: Usuário não autenticado ou coleção não definida.");
+        return []; // Retorna array vazio em caso de erro
+    }
+    try {
+        const querySnapshot = await getDocs(tasksCollectionRef);
+        const tasks = [];
+        querySnapshot.forEach((doc) => {
+            tasks.push({ id: doc.id, ...doc.data() });
+        });
+        return tasks;
+    } catch (error) {
+        console.error("Erro ao buscar todas as tarefas do usuário:", error);
+        if (typeof showMessage === 'function') showMessage("Erro ao buscar dados para o relatório.", "error");
+        return []; // Retorna array vazio em caso de erro
+    }
 }
